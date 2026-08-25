@@ -168,7 +168,11 @@ Generalization gap:
 = 12.83 percentage points
 ```
 
+### Training Accuracy
+
 ![Training Accuracy](figures/training_accuracy.png)
+
+### Training Loss
 
 ![Training Loss](figures/training_loss.png)
 
@@ -176,7 +180,7 @@ Generalization gap:
 
 ## Test Performance
 
-The trained CNN was evaluated on 10,000 unseen CIFAR-10 test images.
+The trained CNN was evaluated on **10,000 unseen CIFAR-10 test images**.
 
 ```text
 Correct predictions: 7162
@@ -194,11 +198,13 @@ The confusion matrix shows how frequently each class is predicted correctly or c
 
 ![Confusion Matrix](figures/confusion_matrix.png)
 
-Rows represent the true class.
+The matrix can be interpreted as:
 
-Columns represent the predicted class.
-
-The diagonal contains correct predictions.
+```text
+Rows    = true classes
+Columns = predicted classes
+Diagonal = correct predictions
+```
 
 ### Per-Class Accuracy
 
@@ -291,15 +297,15 @@ It therefore represents more complex combinations of visual patterns.
 The general feature hierarchy can be understood as:
 
 ```text
-raw pixels
-   ↓
-simple visual patterns
-   ↓
-edges and textures
-   ↓
-more complex feature combinations
-   ↓
-learned image representation
+Raw pixels
+    ↓
+Simple visual patterns
+    ↓
+Edges and textures
+    ↓
+More complex feature combinations
+    ↓
+Learned image representation
 ```
 
 ---
@@ -324,7 +330,7 @@ CNN
 
 These 128-dimensional vectors describe how the CNN internally represents each image.
 
-Because 128 dimensions cannot be directly visualized, Principal Component Analysis (PCA) was used to reduce the representation space to two dimensions.
+Because 128 dimensions cannot be directly visualized, **Principal Component Analysis (PCA)** was used to reduce the representation space to two dimensions.
 
 ```text
 128 dimensions
@@ -344,7 +350,7 @@ Images with similar learned representations tend to appear closer together in th
 
 Classes with greater overlap can be harder for the classifier to distinguish.
 
-Several animal categories showed substantial overlap in the 2D PCA projection.
+Several animal categories showed substantial overlap in the two-dimensional PCA projection.
 
 This is consistent with the confusion matrix, where classes such as:
 
@@ -378,24 +384,24 @@ where:
 128  = learned features per image
 ```
 
-The feature matrix can be written as:
+The complete representation matrix can be written as:
 
 ```text
-X ∈ R^(3000 × 128)
+X = 3000 × 128
 ```
 
-PCA centers the data:
+PCA first centers the feature values:
 
 ```text
 X_centered = X - mean(X)
 ```
 
-and identifies directions of maximum variance.
+It then identifies the directions in feature space that contain the greatest variation.
 
-The 128-dimensional features are projected onto the two most important principal components.
+The 128-dimensional representation is projected onto the two most important principal directions:
 
 ```text
-Z = X_centered W
+Z = X_centered × W
 ```
 
 where:
@@ -420,27 +426,39 @@ The number of images remains the same.
 
 Only the number of features used to represent each image is reduced.
 
+Each image therefore becomes one point:
+
+```text
+128 learned values
+        ↓
+       PCA
+        ↓
+[x-coordinate, y-coordinate]
+        ↓
+one point in the graph
+```
+
 ---
 
 ## Prediction Confidence and Failure Analysis
 
-Prediction confidence was calculated using softmax probabilities.
+The CNN produces 10 class scores called **logits**.
 
-The network outputs 10 class logits.
+Softmax converts these logits into class probabilities.
 
-Softmax converts these logits into normalized class probabilities.
+The basic softmax calculation is:
 
-For class \(i\):
+```text
+Probability of class i
+=
+exp(score_i)
+/
+sum of exp(all class scores)
+```
 
-\[
-P_i =
-\frac{e^{z_i}}
-{\sum_j e^{z_j}}
-\]
+The class with the largest probability becomes the predicted class.
 
-The class with the highest probability becomes the predicted class.
-
-Incorrect predictions were then inspected.
+Incorrect predictions were then inspected individually.
 
 ![Incorrect Predictions](figures/wrong_predictions.png)
 
@@ -477,7 +495,7 @@ Confidence: 61.7%
 These examples demonstrate an important property of neural classifiers:
 
 ```text
-high confidence ≠ guaranteed correctness
+High confidence ≠ guaranteed correctness
 ```
 
 A model can produce a dominant class probability even when the prediction is incorrect.
@@ -486,52 +504,123 @@ A model can produce a dominant class probability even when the prediction is inc
 
 ## Grad-CAM Visual Explanation
 
-Grad-CAM was used to investigate which image regions influenced individual class predictions.
+Grad-CAM stands for:
 
-Grad-CAM uses gradients of a target class score with respect to convolutional feature maps.
+```text
+Gradient-weighted Class Activation Mapping
+```
 
-For feature map \(A^k\), the importance weight can be approximated as:
+It was used to investigate **which image regions contributed most strongly to the CNN's prediction**.
 
-\[
-\alpha_k =
-\frac{1}{HW}
-\sum_i
-\sum_j
-\frac{\partial y^c}
-{\partial A_{ij}^{k}}
-\]
+In simple terms, after the CNN makes a prediction, Grad-CAM asks:
 
-The Grad-CAM heatmap is then calculated as:
+> Which parts of the image were most important for producing this class score?
 
-\[
-L_{\text{Grad-CAM}}^c
+Grad-CAM uses gradients flowing into a convolutional layer to estimate the importance of each learned feature map.
+
+### Feature-Map Importance
+
+For each feature map `A_k`, Grad-CAM calculates an importance weight:
+
+```text
+alpha_k
 =
-\mathrm{ReLU}
-\left(
-\sum_k
-\alpha_k A^k
-\right)
-\]
+average of the gradients of the target class score
+with respect to feature map A_k
+```
 
-The resulting heatmap highlights spatial regions that contributed strongly to the selected class prediction.
+A simplified representation is:
 
-### Example Grad-CAM Result
+```text
+alpha_k
+=
+(1 / H×W)
+×
+sum of all gradients in feature map k
+```
+
+where:
+
+```text
+target class score = score produced for the selected class
+A_k                = kth convolutional feature map
+H, W               = height and width of the feature map
+gradient           = influence on the selected class score
+```
+
+The idea is:
+
+```text
+Gradient
+   ↓
+How strongly did this feature map
+influence the predicted class?
+```
+
+### Creating the Grad-CAM Heatmap
+
+The feature maps are combined using their importance weights:
+
+```text
+Grad-CAM
+=
+ReLU(
+    sum of
+    importance_weight × feature_map
+)
+```
+
+The ReLU operation keeps positive contributions that support the selected class.
+
+The complete process can be understood as:
+
+```text
+Input Image
+     ↓
+CNN Prediction
+     ↓
+Target Class Score
+     ↓
+Backpropagate Gradients
+     ↓
+Measure Feature-Map Importance
+     ↓
+Combine Important Feature Maps
+     ↓
+Grad-CAM Heatmap
+```
+
+### Grad-CAM Example
 
 ![Grad-CAM Example](figures/gradcam_example.png)
 
-The example shows that the CNN can use both object information and surrounding contextual information when forming its prediction.
+The heatmap indicates which spatial regions contributed more strongly to the CNN's prediction.
 
-A correct prediction therefore does not necessarily mean that the CNN relied only on the most visually obvious object region.
+Generally:
+
+```text
+Red / Yellow
+→ stronger influence
+
+Blue
+→ weaker influence
+```
+
+In the example above, the network does not rely exclusively on the central object.
+
+Some highly activated regions also occur in the surrounding image context.
+
+This suggests that the CNN may use a combination of **object features and contextual visual cues** when making its classification decision.
 
 ---
 
 ## Correct vs Incorrect Grad-CAM
 
-Grad-CAM was also compared between one correct and one incorrect prediction.
+Grad-CAM was also compared between a correctly classified image and an incorrectly classified image.
 
 ![Grad-CAM Correct vs Wrong](figures/gradcam_correct_vs_wrong.png)
 
-The correct example was:
+### Correct Prediction
 
 ```text
 True class:      cat
@@ -539,7 +628,7 @@ Predicted class: cat
 Confidence:      51.6%
 ```
 
-The incorrect example was:
+### Incorrect Prediction
 
 ```text
 True class:      frog
@@ -547,55 +636,157 @@ Predicted class: bird
 Confidence:      63.6%
 ```
 
-The comparison suggests that CNN prediction errors cannot always be explained simply by the model looking at an irrelevant image location.
+The comparison shows that an incorrect prediction does not necessarily occur because the CNN completely ignored the object.
 
-A model may attend to object-related regions but still generate an incorrect prediction because the extracted feature patterns resemble those associated with another class.
+Instead, the network may focus on meaningful visual regions but extract features that resemble those associated with another class.
 
-This connects several observations from the project:
+A simplified interpretation is:
 
 ```text
-visual feature extraction
-        ↓
-learned representation
-        ↓
-representation overlap
-        ↓
-class confusion
-        ↓
-incorrect prediction
+Image
+  ↓
+CNN detects visual patterns
+  ↓
+Patterns form an internal representation
+  ↓
+Representation resembles another class
+  ↓
+Incorrect prediction
 ```
+
+This connects Grad-CAM with the other findings in the project:
+
+```text
+Feature Extraction
+        ↓
+Learned Representation
+        ↓
+Representation Overlap
+        ↓
+Class Confusion
+        ↓
+Incorrect Prediction
+```
+
+Grad-CAM therefore helps explain **where the CNN obtained evidence for a prediction**, while the representation and confusion analyses help explain **why that evidence may lead to the wrong class**.
 
 ---
 
 ## Core CNN Mathematics
 
-A convolution operation can be understood as a sliding weighted calculation over local image regions.
+A convolution operation can be understood as a **small filter sliding across the image** and calculating a weighted sum at each location.
 
-For an input region \(X\) and convolutional kernel \(K\):
+For an input image region `X` and convolutional kernel `K`:
 
-\[
-Y(i,j)
+```text
+Y(i, j)
 =
-\sum_m
-\sum_n
-X(i+m,j+n)K(m,n)+b
-\]
+Σ_m Σ_n [ X(i + m, j + n) × K(m, n) ] + b
+```
 
-The convolutional filters are initially represented by trainable numerical weights.
+where:
 
-During training, backpropagation changes these values so the filters become useful for classification.
+```text
+X(i + m, j + n) = input pixel value
+K(m, n)         = convolution-filter weight
+b               = bias
+Y(i, j)         = output value at position (i, j)
+```
+
+In simple terms:
+
+```text
+Take a small image region
+        ↓
+Multiply every pixel by a filter weight
+        ↓
+Add the multiplied values
+        ↓
+Add bias
+        ↓
+Produce one feature-map value
+```
+
+### Example Convolution
+
+Imagine a small image region:
+
+```text
+1  2  3
+4  5  6
+7  8  9
+```
+
+and a filter:
+
+```text
+ 1   0  -1
+ 1   0  -1
+ 1   0  -1
+```
+
+The convolution calculation is:
+
+```text
+(1×1) + (2×0) + (3×-1)
++
+(4×1) + (5×0) + (6×-1)
++
+(7×1) + (8×0) + (9×-1)
+```
+
+which becomes:
+
+```text
+1 - 3 + 4 - 6 + 7 - 9
+= -6
+```
+
+That value becomes one position in the output feature map.
+
+The filter then moves to another region of the image and repeats the calculation.
+
+The convolutional filters begin as trainable numerical weights.
+
+During training:
+
+```text
+Forward pass
+     ↓
+Prediction
+     ↓
+Loss
+     ↓
+Backpropagation
+     ↓
+Gradients
+     ↓
+Optimizer updates filter weights
+```
+
+As training continues, different filters become useful for detecting visual patterns such as:
+
+```text
+edges
+textures
+color transitions
+curves
+local shapes
+```
+
+Deeper convolutional layers combine these simpler features into increasingly complex visual representations.
 
 ---
 
 ## ReLU
 
-The ReLU activation function is:
+The ReLU activation function is very simple:
 
-\[
-ReLU(x)=\max(0,x)
-\]
+```text
+ReLU(x) = max(0, x)
+```
 
-Therefore:
+This means:
 
 ```text
 -5 → 0
@@ -605,7 +796,21 @@ Therefore:
  8 → 8
 ```
 
-ReLU introduces non-linearity and allows the CNN to learn complex relationships.
+In simple terms:
+
+```text
+Negative value
+     ↓
+Set to zero
+
+Positive value
+     ↓
+Keep it
+```
+
+ReLU introduces non-linearity into the neural network.
+
+Without non-linear activation functions, many stacked layers would still behave like one large linear transformation.
 
 ---
 
@@ -620,37 +825,78 @@ For example:
 2  7
 ```
 
-a 2×2 max-pooling operation produces:
+a 2×2 max-pooling operation keeps the largest value:
 
 ```text
 7
 ```
 
-Pooling reduces computation while retaining strong feature responses.
+So:
+
+```text
+Large feature map
+       ↓
+Max pooling
+       ↓
+Smaller feature map
+```
+
+In this CNN:
+
+```text
+32 × 32
+   ↓
+16 × 16
+```
+
+and later:
+
+```text
+16 × 16
+   ↓
+8 × 8
+```
+
+Pooling reduces computation while preserving strong feature responses.
 
 ---
 
 ## Linear Layers
 
-A linear neuron performs:
+A linear neuron calculates:
 
-\[
-z =
-w_1x_1 +
-w_2x_2 +
-\cdots +
-w_nx_n +
-b
-\]
+```text
+output
+=
+(weight_1 × input_1)
++
+(weight_2 × input_2)
++
+...
++
+(weight_n × input_n)
++
+bias
+```
 
-After convolution and pooling, the extracted feature maps are flattened into a vector.
+A shorter mathematical representation is:
 
-In this CNN:
+```text
+z = w1x1 + w2x2 + ... + wnxn + b
+```
+
+After convolution and pooling, the feature maps have shape:
+
+```text
+64 × 8 × 8
+```
+
+Flattening converts these into:
 
 ```text
 64 × 8 × 8
 =
-4096 features
+4096 values
 ```
 
 The classifier then performs:
@@ -658,26 +904,60 @@ The classifier then performs:
 ```text
 4096 features
      ↓
+Linear layer
+     ↓
 128 learned features
      ↓
-10 class logits
+Linear layer
+     ↓
+10 class scores
 ```
+
+These final 10 numbers represent the evidence for each CIFAR-10 class.
 
 ---
 
 ## Cross-Entropy Loss
 
-The model is trained using cross-entropy loss.
+The model is trained using **Cross-Entropy Loss**.
 
-For the correct class probability \(P_y\):
+The purpose of the loss function is to answer:
 
-\[
-L = -\log(P_y)
-\]
+> How wrong was the prediction?
 
-A high probability for the correct class results in a smaller loss.
+For the correct class:
 
-A low probability for the correct class results in a larger loss.
+```text
+Loss = -log(probability of correct class)
+```
+
+If the model gives the correct class a high probability:
+
+```text
+Correct-class probability = 0.95
+↓
+small loss
+```
+
+If the model gives the correct class a low probability:
+
+```text
+Correct-class probability = 0.02
+↓
+large loss
+```
+
+Therefore:
+
+```text
+Good prediction
+     ↓
+small loss
+
+Bad prediction
+     ↓
+large loss
+```
 
 ---
 
@@ -689,7 +969,7 @@ After the forward pass, PyTorch calculates gradients using:
 loss.backward()
 ```
 
-The gradient of the loss with respect to each trainable parameter is calculated using the chain rule.
+Backpropagation determines how each trainable parameter contributed to the loss.
 
 Conceptually:
 
@@ -708,12 +988,24 @@ First Convolution
 Each parameter receives a gradient:
 
 ```text
-∂Loss
-─────
-∂Weight
+gradient
+=
+change in loss
+/
+change in weight
 ```
 
-which indicates how changing that weight would affect the loss.
+or:
+
+```text
+∂Loss / ∂Weight
+```
+
+The gradient tells the optimizer:
+
+> In which direction should this weight move to reduce the loss?
+
+PyTorch calculates these gradients automatically using the chain rule.
 
 ---
 
@@ -723,41 +1015,49 @@ The Adam optimizer updates the CNN parameters using the calculated gradients.
 
 The basic gradient-descent idea is:
 
-\[
-w_{new}
-=
-w_{old}
--
-\eta
-\frac{\partial L}{\partial w}
-\]
-
-where:
-
 ```text
-w = model weight
-η = learning rate
-L = loss
+new_weight
+=
+old_weight
+-
+learning_rate × gradient
 ```
 
-The training cycle is therefore:
+For example:
 
 ```text
-images
+Old weight     = 0.50
+Gradient       = 2.00
+Learning rate  = 0.01
+
+New weight
+=
+0.50 - (0.01 × 2.00)
+
+=
+0.48
+```
+
+Adam uses additional information about previous gradients to make parameter updates more adaptive than basic gradient descent.
+
+The overall training cycle is:
+
+```text
+Images
   ↓
-forward pass
+Forward pass
   ↓
-prediction
+Prediction
   ↓
-cross-entropy loss
+Cross-entropy loss
   ↓
-backpropagation
+Backpropagation
   ↓
-gradients
+Gradients
   ↓
 Adam optimizer
   ↓
-update CNN parameters
+Update CNN parameters
 ```
 
 ---
@@ -776,20 +1076,41 @@ The batch size is:
 64 images
 ```
 
-Therefore, one epoch contains approximately:
+The model therefore processes the data in small groups.
+
+One batch:
+
+```text
+64 images
+    ↓
+CNN forward pass
+    ↓
+Loss
+    ↓
+Backpropagation
+    ↓
+One parameter update
+```
+
+One epoch means:
+
+```text
+The model has processed
+all 50,000 training images once
+```
+
+The approximate number of batches per epoch is:
 
 ```text
 50,000 / 64
-≈ 782 training batches
+≈ 782 batches
 ```
-
-One batch produces approximately one parameter update.
 
 Therefore:
 
 ```text
 1 epoch
-≈ 782 updates
+≈ 782 parameter updates
 ```
 
 For 10 epochs:
@@ -799,7 +1120,34 @@ For 10 epochs:
 ≈ 7,820 parameter updates
 ```
 
-An epoch means that the model has processed the complete training dataset once.
+The learning process can therefore be imagined as:
+
+```text
+Batch 1
+↓
+update weights
+
+Batch 2
+↓
+update weights
+
+Batch 3
+↓
+update weights
+
+...
+
+Batch 782
+↓
+update weights
+
+===========
+Epoch 1 done
+===========
+
+Repeat again
+for Epoch 2
+```
 
 ---
 
@@ -807,27 +1155,45 @@ An epoch means that the model has processed the complete training dataset once.
 
 ### 1. CNNs Learn Hierarchical Visual Representations
 
-The network progressively transforms raw image pixels into more useful feature representations.
+The network progressively transforms raw image pixels into more useful representations.
 
 ```text
-pixels
+Pixels
  ↓
-edges and textures
+Edges and textures
  ↓
-feature combinations
+Feature combinations
  ↓
-high-level representation
+Higher-level representations
  ↓
-classification
+Classification
 ```
+
+---
 
 ### 2. Representation Quality Differs Across Classes
 
 Some classes are represented more distinctly than others.
 
-Automobiles, ships and frogs achieved relatively strong classification performance.
+Strong-performing classes included:
 
-Cats, dogs and birds were more difficult to separate.
+```text
+Automobile
+Ship
+Frog
+Horse
+```
+
+More difficult classes included:
+
+```text
+Cat
+Dog
+Bird
+Deer
+```
+
+---
 
 ### 3. Similar Visual Categories Are Frequently Confused
 
@@ -846,33 +1212,65 @@ Dog → Cat = 159
 
 misclassifications.
 
+---
+
 ### 4. Learned Representation Overlap Is Visible
 
 The PCA analysis showed substantial overlap between multiple image classes, particularly among animal categories.
 
+This is consistent with the confusion matrix.
+
+---
+
 ### 5. Neural-Network Confidence Can Be Misleading
 
-The network produced several incorrect predictions with very high softmax confidence.
+The network produced several incorrect predictions with high softmax confidence.
 
 Therefore:
 
 ```text
-confidence ≠ correctness
+Confidence ≠ Correctness
 ```
+
+---
 
 ### 6. CNN Predictions Can Depend on Contextual Information
 
-Grad-CAM showed that prediction-relevant activation can sometimes occur outside the most visually obvious object region.
+Grad-CAM showed that prediction-relevant activations can sometimes occur outside the most visually obvious object region.
+
+The CNN may therefore use:
+
+```text
+object information
++
+background information
++
+contextual visual patterns
+```
+
+when making a decision.
+
+---
 
 ### 7. Accuracy Alone Does Not Explain Model Behavior
 
-The test accuracy was:
+The final test accuracy was:
 
 ```text
 71.62%
 ```
 
-but the confusion matrix, feature maps, PCA, confidence analysis and Grad-CAM revealed much more about how the model behaves internally.
+but accuracy alone does not explain:
+
+```text
+Which classes fail?
+Why do they fail?
+Which representations overlap?
+How confident are incorrect predictions?
+Which regions influence predictions?
+```
+
+The confusion matrix, feature maps, PCA representation analysis, confidence analysis and Grad-CAM provide a deeper view of the model.
 
 ---
 
@@ -946,45 +1344,69 @@ pip install -r requirements.txt
 
 ---
 
+## Requirements
+
+The project uses:
+
+```text
+torch
+torchvision
+matplotlib
+scikit-learn
+numpy
+```
+
+A suitable `requirements.txt` is:
+
+```text
+torch>=2.0
+torchvision>=0.15
+matplotlib>=3.7
+scikit-learn>=1.3
+numpy>=1.24
+```
+
+---
+
 ## Running the Project
 
-Train the CNN:
+### Train the CNN
 
 ```bash
 python training/train.py
 ```
 
-Evaluate the trained model:
+### Evaluate the CNN
 
 ```bash
 python training/evaluate.py
 ```
 
-Generate the confusion matrix and confidence analysis:
+### Generate Confusion Matrix and Error Analysis
 
 ```bash
 python analysis/error_analysis.py
 ```
 
-Visualize convolutional feature maps:
+### Visualize Feature Maps
 
 ```bash
 python analysis/feature_maps.py
 ```
 
-Analyze learned representation space using PCA:
+### Analyze Learned Representations Using PCA
 
 ```bash
 python analysis/representation_analysis.py
 ```
 
-Generate Grad-CAM visual explanations:
+### Generate Grad-CAM Explanations
 
 ```bash
 python analysis/gradcam.py
 ```
 
-Generate training curves:
+### Generate Training Curves
 
 ```bash
 python analysis/training_summary.py
@@ -995,13 +1417,13 @@ python analysis/training_summary.py
 ## Complete Learning Pipeline
 
 ```text
-PyTorch tensors
+PyTorch Tensors
       ↓
 Autograd
       ↓
 DataLoader
       ↓
-CNN architecture
+CNN Architecture
       ↓
 Convolution
       ↓
@@ -1009,31 +1431,31 @@ ReLU
       ↓
 Pooling
       ↓
-Forward propagation
+Forward Propagation
       ↓
-Cross-entropy loss
+Cross-Entropy Loss
       ↓
 Backpropagation
       ↓
-Adam optimization
+Adam Optimization
       ↓
-Image classification
+Image Classification
       ↓
-Test evaluation
+Test Evaluation
       ↓
-Confusion analysis
+Confusion Analysis
       ↓
-Feature-map visualization
+Feature-Map Visualization
       ↓
-Representation analysis
+Representation Analysis
       ↓
 PCA
       ↓
-Confidence analysis
+Confidence Analysis
       ↓
 Grad-CAM
       ↓
-Correct-vs-incorrect explanation
+Correct-vs-Incorrect Explanation
 ```
 
 ---
@@ -1059,7 +1481,25 @@ However, deeper analysis revealed:
 - highly confident incorrect predictions,
 - and reliance on localized or contextual visual features.
 
-By combining classification evaluation, feature-map inspection, PCA representation visualization, confidence analysis and Grad-CAM explanations, this project provides a broader view of how convolutional neural networks transform visual information and use learned representations to make decisions.
+The experiments show that understanding a CNN requires more than measuring its final accuracy.
+
+By combining:
+
+```text
+classification performance
+        +
+confusion analysis
+        +
+feature-map visualization
+        +
+representation-space analysis
+        +
+confidence analysis
+        +
+Grad-CAM
+```
+
+the project provides a broader view of how convolutional neural networks transform visual information and use learned representations to make classification decisions.
 
 ---
 
