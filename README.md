@@ -201,8 +201,8 @@ The confusion matrix shows how frequently each class is predicted correctly or c
 The matrix can be interpreted as:
 
 ```text
-Rows    = true classes
-Columns = predicted classes
+Rows     = true classes
+Columns  = predicted classes
 Diagonal = correct predictions
 ```
 
@@ -384,21 +384,46 @@ where:
 128  = learned features per image
 ```
 
-The complete representation matrix can be written as:
+The feature matrix can be written as:
 
 ```text
-X = 3000 × 128
+X ∈ R^(3000 × 128)
 ```
 
-PCA first centers the feature values:
+PCA first centers the data:
 
 ```text
-X_centered = X - mean(X)
+X_centered = X - μ
 ```
 
-It then identifies the directions in feature space that contain the greatest variation.
+where:
 
-The 128-dimensional representation is projected onto the two most important principal directions:
+```text
+μ = mean feature vector
+```
+
+The covariance matrix is then conceptually:
+
+```text
+C = (1 / (n - 1)) × X_centered^T × X_centered
+```
+
+For this project:
+
+```text
+X_centered = 3000 × 128
+C          = 128 × 128
+```
+
+PCA identifies eigenvectors of the covariance matrix corresponding to directions of maximum variance.
+
+The two principal directions form:
+
+```text
+W = 128 × 2
+```
+
+The projection is then:
 
 ```text
 Z = X_centered × W
@@ -426,7 +451,7 @@ The number of images remains the same.
 
 Only the number of features used to represent each image is reduced.
 
-Each image therefore becomes one point:
+Each image therefore becomes:
 
 ```text
 128 learned values
@@ -435,25 +460,38 @@ Each image therefore becomes one point:
         ↓
 [x-coordinate, y-coordinate]
         ↓
-one point in the graph
+one point in the visualization
 ```
 
 ---
 
 ## Prediction Confidence and Failure Analysis
 
-The CNN produces 10 class scores called **logits**.
-
-Softmax converts these logits into class probabilities.
-
-The basic softmax calculation is:
+The CNN produces 10 raw class scores called **logits**:
 
 ```text
-Probability of class i
-=
-exp(score_i)
-/
-sum of exp(all class scores)
+z_1, z_2, ..., z_10
+```
+
+Softmax converts these logits into normalized class probabilities.
+
+For class `i`:
+
+```text
+P_i = exp(z_i) / Σ_j exp(z_j)
+```
+
+where:
+
+```text
+z_i = logit for class i
+P_i = softmax probability for class i
+```
+
+All probabilities sum to approximately:
+
+```text
+Σ_i P_i = 1
 ```
 
 The class with the largest probability becomes the predicted class.
@@ -514,78 +552,102 @@ It was used to investigate **which image regions contributed most strongly to th
 
 In simple terms, after the CNN makes a prediction, Grad-CAM asks:
 
-> Which parts of the image were most important for producing this class score?
+> Which parts of the image were most influential for producing this class score?
 
-Grad-CAM uses gradients flowing into a convolutional layer to estimate the importance of each learned feature map.
+Grad-CAM uses gradients flowing through a convolutional layer to estimate the importance of each learned feature map.
 
-### Feature-Map Importance
+### Grad-CAM Mathematics
 
-For each feature map `A_k`, Grad-CAM calculates an importance weight:
+Suppose the convolutional layer produces feature maps:
 
 ```text
-alpha_k
-=
-average of the gradients of the target class score
-with respect to feature map A_k
+A_1, A_2, ..., A_k
 ```
 
-A simplified representation is:
+For feature map `A_k`, Grad-CAM computes an importance weight:
 
 ```text
 alpha_k
 =
-(1 / H×W)
+(1 / (H × W))
 ×
-sum of all gradients in feature map k
+Σ_i Σ_j
+[
+∂y_c / ∂A_k(i, j)
+]
 ```
 
 where:
 
 ```text
-target class score = score produced for the selected class
-A_k                = kth convolutional feature map
-H, W               = height and width of the feature map
-gradient           = influence on the selected class score
+y_c          = score for target class c
+A_k          = kth convolutional feature map
+H            = feature-map height
+W            = feature-map width
+∂y_c/∂A_k    = gradient of class score with respect to feature map
 ```
 
-The idea is:
+The gradient answers:
 
 ```text
-Gradient
-   ↓
-How strongly did this feature map
-influence the predicted class?
+If this feature-map activation changed,
+how much would the target class score change?
 ```
 
-### Creating the Grad-CAM Heatmap
+The spatial gradients are averaged to obtain one importance value for each feature map.
 
-The feature maps are combined using their importance weights:
+The Grad-CAM heatmap is then calculated as:
 
 ```text
-Grad-CAM
+L_GradCAM^c
 =
 ReLU(
-    sum of
-    importance_weight × feature_map
+    Σ_k [ alpha_k × A_k ]
 )
 ```
 
-The ReLU operation keeps positive contributions that support the selected class.
+This means:
 
-The complete process can be understood as:
+```text
+Feature map 1 × importance 1
++
+Feature map 2 × importance 2
++
+Feature map 3 × importance 3
++
+...
+        ↓
+Add them together
+        ↓
+Apply ReLU
+        ↓
+Grad-CAM heatmap
+```
+
+The ReLU operation is used to keep positive evidence supporting the selected class.
+
+The complete process is:
 
 ```text
 Input Image
      ↓
-CNN Prediction
+CNN Forward Pass
      ↓
-Target Class Score
+Target Class Score y_c
      ↓
-Backpropagate Gradients
+Backpropagate Gradient
      ↓
-Measure Feature-Map Importance
+∂y_c / ∂A_k
      ↓
-Combine Important Feature Maps
+Average Gradients
+     ↓
+alpha_k
+     ↓
+Weighted Feature Maps
+     ↓
+Σ_k alpha_k A_k
+     ↓
+ReLU
      ↓
 Grad-CAM Heatmap
 ```
@@ -600,10 +662,10 @@ Generally:
 
 ```text
 Red / Yellow
-→ stronger influence
+→ stronger influence on the prediction
 
 Blue
-→ weaker influence
+→ weaker influence on the prediction
 ```
 
 In the example above, the network does not rely exclusively on the central object.
@@ -674,23 +736,28 @@ Grad-CAM therefore helps explain **where the CNN obtained evidence for a predict
 
 ## Core CNN Mathematics
 
-A convolution operation can be understood as a **small filter sliding across the image** and calculating a weighted sum at each location.
+A convolution operation can be understood as a **small trainable filter sliding across an image**.
 
-For an input image region `X` and convolutional kernel `K`:
+For an input image `X` and convolution kernel `K`, one output value can be written as:
 
 ```text
 Y(i, j)
 =
-Σ_m Σ_n [ X(i + m, j + n) × K(m, n) ] + b
+Σ_m Σ_n
+[
+X(i + m, j + n) × K(m, n)
+]
++
+b
 ```
 
 where:
 
 ```text
 X(i + m, j + n) = input pixel value
-K(m, n)         = convolution-filter weight
+K(m, n)         = convolution-kernel weight
 b               = bias
-Y(i, j)         = output value at position (i, j)
+Y(i, j)         = output activation at location (i, j)
 ```
 
 In simple terms:
@@ -698,9 +765,9 @@ In simple terms:
 ```text
 Take a small image region
         ↓
-Multiply every pixel by a filter weight
+Multiply pixels by filter weights
         ↓
-Add the multiplied values
+Add all multiplied values
         ↓
 Add bias
         ↓
@@ -709,7 +776,7 @@ Produce one feature-map value
 
 ### Example Convolution
 
-Imagine a small image region:
+Consider the image region:
 
 ```text
 1  2  3
@@ -717,7 +784,7 @@ Imagine a small image region:
 7  8  9
 ```
 
-and a filter:
+and the filter:
 
 ```text
  1   0  -1
@@ -742,7 +809,7 @@ which becomes:
 = -6
 ```
 
-That value becomes one position in the output feature map.
+That value becomes one location in the output feature map.
 
 The filter then moves to another region of the image and repeats the calculation.
 
@@ -751,7 +818,7 @@ The convolutional filters begin as trainable numerical weights.
 During training:
 
 ```text
-Forward pass
+Forward Pass
      ↓
 Prediction
      ↓
@@ -761,7 +828,7 @@ Backpropagation
      ↓
 Gradients
      ↓
-Optimizer updates filter weights
+Optimizer Updates Filter Weights
 ```
 
 As training continues, different filters become useful for detecting visual patterns such as:
@@ -774,49 +841,56 @@ curves
 local shapes
 ```
 
-Deeper convolutional layers combine these simpler features into increasingly complex visual representations.
+Deeper convolutional layers combine these simpler patterns into more complex visual representations.
 
 ---
 
-## ReLU
+## ReLU Mathematics
 
-The ReLU activation function is very simple:
+The ReLU activation function is:
 
 ```text
 ReLU(x) = max(0, x)
 ```
 
-This means:
+Equivalently:
 
 ```text
--5 → 0
--1 → 0
- 0 → 0
- 3 → 3
- 8 → 8
+ReLU(x) = x     if x > 0
+ReLU(x) = 0     if x ≤ 0
 ```
 
-In simple terms:
+Examples:
 
 ```text
-Negative value
-     ↓
+ReLU(-5) = 0
+ReLU(-1) = 0
+ReLU(0)  = 0
+ReLU(3)  = 3
+ReLU(8)  = 8
+```
+
+Conceptually:
+
+```text
+Negative activation
+        ↓
 Set to zero
 
-Positive value
-     ↓
-Keep it
+Positive activation
+        ↓
+Keep the value
 ```
 
-ReLU introduces non-linearity into the neural network.
+ReLU introduces non-linearity.
 
-Without non-linear activation functions, many stacked layers would still behave like one large linear transformation.
+Without non-linear activation functions, stacking multiple linear layers would still result in a linear transformation.
 
 ---
 
-## Max Pooling
+## Max-Pooling Mathematics
 
-Max pooling reduces the spatial dimensions of feature maps.
+Max pooling reduces the spatial size of a feature map by selecting the maximum value from a local region.
 
 For example:
 
@@ -825,20 +899,21 @@ For example:
 2  7
 ```
 
-a 2×2 max-pooling operation keeps the largest value:
+a 2×2 max-pooling operation gives:
 
 ```text
-7
+max(1, 4, 2, 7) = 7
 ```
 
-So:
+Therefore:
 
 ```text
-Large feature map
-       ↓
-Max pooling
-       ↓
-Smaller feature map
+1  4
+2  7
+
+ ↓ MaxPool
+
+7
 ```
 
 In this CNN:
@@ -857,32 +932,41 @@ and later:
 8 × 8
 ```
 
-Pooling reduces computation while preserving strong feature responses.
+Pooling reduces computation while retaining strong local feature responses.
 
 ---
 
-## Linear Layers
+## Linear Layer Mathematics
 
-A linear neuron calculates:
+A linear neuron performs a weighted sum:
 
 ```text
-output
+z
 =
-(weight_1 × input_1)
+w_1x_1
 +
-(weight_2 × input_2)
+w_2x_2
 +
 ...
 +
-(weight_n × input_n)
+w_nx_n
 +
-bias
+b
 ```
 
-A shorter mathematical representation is:
+or more compactly:
 
 ```text
-z = w1x1 + w2x2 + ... + wnxn + b
+z = Σ_i (w_i × x_i) + b
+```
+
+where:
+
+```text
+x_i = input feature
+w_i = trainable weight
+b   = bias
+z   = output
 ```
 
 After convolution and pooling, the feature maps have shape:
@@ -891,77 +975,129 @@ After convolution and pooling, the feature maps have shape:
 64 × 8 × 8
 ```
 
-Flattening converts these into:
+Flattening gives:
 
 ```text
 64 × 8 × 8
 =
-4096 values
+4096 features
 ```
 
-The classifier then performs:
+The classifier then transforms:
 
 ```text
 4096 features
      ↓
-Linear layer
+Linear Layer
      ↓
-128 learned features
+128-dimensional representation
      ↓
-Linear layer
+ReLU
      ↓
-10 class scores
+Linear Layer
+     ↓
+10 class logits
 ```
 
-These final 10 numbers represent the evidence for each CIFAR-10 class.
+The first linear layer can be expressed as:
+
+```text
+h = W_1 x + b_1
+```
+
+and the final classification layer as:
+
+```text
+z = W_2 h + b_2
+```
+
+where:
+
+```text
+x = flattened CNN features
+h = 128-dimensional hidden representation
+z = 10 output logits
+```
 
 ---
 
-## Cross-Entropy Loss
+## Cross-Entropy Loss Mathematics
 
 The model is trained using **Cross-Entropy Loss**.
 
-The purpose of the loss function is to answer:
-
-> How wrong was the prediction?
-
-For the correct class:
+For a single example whose correct class is `y`, the loss is:
 
 ```text
-Loss = -log(probability of correct class)
+L = -log(P_y)
 ```
 
-If the model gives the correct class a high probability:
+where:
 
 ```text
-Correct-class probability = 0.95
-↓
-small loss
+P_y = predicted probability assigned to the correct class
 ```
 
-If the model gives the correct class a low probability:
+Softmax first calculates:
 
 ```text
-Correct-class probability = 0.02
-↓
-large loss
+P_y
+=
+exp(z_y)
+/
+Σ_j exp(z_j)
 ```
+
+Therefore the complete idea is:
+
+```text
+Logits
+  ↓
+Softmax
+  ↓
+Class Probabilities
+  ↓
+Probability of Correct Class
+  ↓
+-log(P_correct)
+  ↓
+Cross-Entropy Loss
+```
+
+For example:
+
+```text
+P_correct = 0.95
+L = -log(0.95)
+≈ 0.051
+```
+
+This is a small loss.
+
+But:
+
+```text
+P_correct = 0.02
+L = -log(0.02)
+≈ 3.912
+```
+
+This is a much larger loss.
 
 Therefore:
 
 ```text
-Good prediction
-     ↓
-small loss
+High correct-class probability
+        ↓
+Small loss
 
-Bad prediction
-     ↓
-large loss
+Low correct-class probability
+        ↓
+Large loss
 ```
 
 ---
 
-## Backpropagation
+## Backpropagation Mathematics
 
 After the forward pass, PyTorch calculates gradients using:
 
@@ -969,12 +1105,43 @@ After the forward pass, PyTorch calculates gradients using:
 loss.backward()
 ```
 
-Backpropagation determines how each trainable parameter contributed to the loss.
+For every trainable parameter `w`, backpropagation computes:
 
-Conceptually:
+```text
+∂L / ∂w
+```
+
+This means:
+
+```text
+How much does the loss change
+when this weight changes?
+```
+
+For a chain of transformations:
+
+```text
+x → a → b → L
+```
+
+the chain rule gives:
+
+```text
+∂L/∂x
+=
+(∂L/∂b)
+×
+(∂b/∂a)
+×
+(∂a/∂x)
+```
+
+In the CNN, gradients conceptually travel backward through:
 
 ```text
 Loss
+  ↓
+Softmax / Cross-Entropy
   ↓
 Final Linear Layer
   ↓
@@ -985,52 +1152,48 @@ Second Convolution
 First Convolution
 ```
 
-Each parameter receives a gradient:
+Each weight receives a gradient:
 
 ```text
-gradient
-=
-change in loss
-/
-change in weight
+gradient = ∂Loss / ∂Weight
 ```
 
-or:
-
-```text
-∂Loss / ∂Weight
-```
-
-The gradient tells the optimizer:
-
-> In which direction should this weight move to reduce the loss?
-
-PyTorch calculates these gradients automatically using the chain rule.
+This gradient tells the optimizer how the parameter should change to reduce the loss.
 
 ---
 
-## Optimization
+## Gradient Descent
 
-The Adam optimizer updates the CNN parameters using the calculated gradients.
-
-The basic gradient-descent idea is:
+The basic gradient-descent update is:
 
 ```text
-new_weight
+w_new
 =
-old_weight
+w_old
 -
-learning_rate × gradient
+η × (∂L / ∂w)
+```
+
+where:
+
+```text
+w = trainable parameter
+L = loss
+η = learning rate
 ```
 
 For example:
 
 ```text
-Old weight     = 0.50
-Gradient       = 2.00
-Learning rate  = 0.01
+w_old       = 0.50
+gradient    = 2.00
+η           = 0.01
+```
 
-New weight
+then:
+
+```text
+w_new
 =
 0.50 - (0.01 × 2.00)
 
@@ -1038,31 +1201,74 @@ New weight
 0.48
 ```
 
-Adam uses additional information about previous gradients to make parameter updates more adaptive than basic gradient descent.
+The negative sign means the parameter moves in the direction that reduces the loss.
 
-The overall training cycle is:
+---
+
+## Adam Optimization
+
+This project uses the **Adam optimizer** rather than basic gradient descent.
+
+Adam maintains moving estimates of:
+
+```text
+m_t = first moment of gradients
+v_t = second moment of gradients
+```
+
+A simplified form is:
+
+```text
+m_t
+=
+β1 × m_(t-1)
++
+(1 - β1) × g_t
+```
+
+and:
+
+```text
+v_t
+=
+β2 × v_(t-1)
++
+(1 - β2) × g_t²
+```
+
+where:
+
+```text
+g_t = current gradient
+β1  = first-moment decay factor
+β2  = second-moment decay factor
+```
+
+Adam then uses these estimates to adapt the update size for different parameters.
+
+The overall training process is:
 
 ```text
 Images
   ↓
-Forward pass
+Forward Pass
   ↓
-Prediction
+Logits
   ↓
-Cross-entropy loss
+Cross-Entropy Loss
   ↓
 Backpropagation
   ↓
 Gradients
   ↓
-Adam optimizer
+Adam
   ↓
-Update CNN parameters
+Parameter Update
 ```
 
 ---
 
-## Epochs, Batches and Training Steps
+## Epochs, Batches, and Training Steps
 
 The CIFAR-10 training dataset contains:
 
@@ -1076,35 +1282,20 @@ The batch size is:
 64 images
 ```
 
-The model therefore processes the data in small groups.
-
-One batch:
-
-```text
-64 images
-    ↓
-CNN forward pass
-    ↓
-Loss
-    ↓
-Backpropagation
-    ↓
-One parameter update
-```
-
-One epoch means:
-
-```text
-The model has processed
-all 50,000 training images once
-```
-
 The approximate number of batches per epoch is:
 
 ```text
 50,000 / 64
-≈ 782 batches
+≈ 781.25
 ```
+
+Because the final incomplete batch is also processed:
+
+```text
+≈ 782 batches per epoch
+```
+
+One batch typically results in one optimizer update.
 
 Therefore:
 
@@ -1120,33 +1311,144 @@ For 10 epochs:
 ≈ 7,820 parameter updates
 ```
 
-The learning process can therefore be imagined as:
+The training process can be visualized as:
 
 ```text
 Batch 1
-↓
-update weights
+   ↓
+Forward Pass
+   ↓
+Loss
+   ↓
+Backward Pass
+   ↓
+Update Weights
 
 Batch 2
-↓
-update weights
-
-Batch 3
-↓
-update weights
+   ↓
+Forward Pass
+   ↓
+Loss
+   ↓
+Backward Pass
+   ↓
+Update Weights
 
 ...
 
 Batch 782
-↓
-update weights
+   ↓
+Update Weights
 
-===========
-Epoch 1 done
-===========
+================
+Epoch 1 Complete
+================
 
-Repeat again
-for Epoch 2
+Then repeat for the next epoch.
+```
+
+---
+
+## End-to-End Mathematical Pipeline
+
+The complete CNN learning process can be summarized as:
+
+```text
+Input Image
+X ∈ R^(3×32×32)
+
+      ↓
+
+Convolution
+
+Y(i,j)
+=
+Σ_m Σ_n
+[
+X(i+m,j+n) × K(m,n)
+]
++
+b
+
+      ↓
+
+ReLU
+
+ReLU(x) = max(0,x)
+
+      ↓
+
+Max Pooling
+
+max(local region)
+
+      ↓
+
+More Convolutional Features
+
+      ↓
+
+Flatten
+
+64 × 8 × 8
+=
+4096
+
+      ↓
+
+Linear Layer
+
+h = W_1x + b_1
+
+      ↓
+
+128-D Representation
+
+      ↓
+
+Final Linear Layer
+
+z = W_2h + b_2
+
+      ↓
+
+10 Logits
+
+      ↓
+
+Softmax
+
+P_i
+=
+exp(z_i)
+/
+Σ_j exp(z_j)
+
+      ↓
+
+Cross-Entropy
+
+L = -log(P_y)
+
+      ↓
+
+Backpropagation
+
+∂L / ∂w
+
+      ↓
+
+Adam Optimization
+
+w_new
+=
+w_old
+-
+adaptive_update
+
+      ↓
+
+Improved CNN Parameters
 ```
 
 ---
@@ -1218,7 +1520,7 @@ misclassifications.
 
 The PCA analysis showed substantial overlap between multiple image classes, particularly among animal categories.
 
-This is consistent with the confusion matrix.
+This observation is consistent with the confusion matrix.
 
 ---
 
@@ -1241,14 +1543,14 @@ Grad-CAM showed that prediction-relevant activations can sometimes occur outside
 The CNN may therefore use:
 
 ```text
-object information
-+
-background information
-+
-contextual visual patterns
+Object information
+        +
+Background information
+        +
+Contextual visual patterns
 ```
 
-when making a decision.
+when making a classification decision.
 
 ---
 
@@ -1267,10 +1569,10 @@ Which classes fail?
 Why do they fail?
 Which representations overlap?
 How confident are incorrect predictions?
-Which regions influence predictions?
+Which image regions influence predictions?
 ```
 
-The confusion matrix, feature maps, PCA representation analysis, confidence analysis and Grad-CAM provide a deeper view of the model.
+The confusion matrix, feature maps, PCA representation analysis, confidence analysis, and Grad-CAM provide a deeper view of the model.
 
 ---
 
@@ -1322,6 +1624,20 @@ visual-representation-analysis-cnn/
 
 ---
 
+## Requirements
+
+The project requires:
+
+```text
+torch>=2.0
+torchvision>=0.15
+matplotlib>=3.7
+scikit-learn>=1.3
+numpy>=1.24
+```
+
+---
+
 ## Installation
 
 Clone the repository:
@@ -1344,31 +1660,25 @@ pip install -r requirements.txt
 
 ---
 
-## Requirements
-
-The project uses:
-
-```text
-torch
-torchvision
-matplotlib
-scikit-learn
-numpy
-```
-
-A suitable `requirements.txt` is:
-
-```text
-torch>=2.0
-torchvision>=0.15
-matplotlib>=3.7
-scikit-learn>=1.3
-numpy>=1.24
-```
-
----
-
 ## Running the Project
+
+### PyTorch Tensor Basics
+
+```bash
+python 01_tensor_basics.py
+```
+
+### Autograd Basics
+
+```bash
+python 02_autograd_basics.py
+```
+
+### DataLoader Basics
+
+```bash
+python 03_dataloader_basics.py
+```
 
 ### Train the CNN
 
@@ -1423,15 +1733,25 @@ Autograd
       ↓
 DataLoader
       ↓
+CIFAR-10 Images
+      ↓
 CNN Architecture
       ↓
 Convolution
       ↓
 ReLU
       ↓
-Pooling
+Max Pooling
       ↓
-Forward Propagation
+Feature Extraction
+      ↓
+Flattening
+      ↓
+128-D Representation
+      ↓
+Classification Logits
+      ↓
+Softmax
       ↓
 Cross-Entropy Loss
       ↓
@@ -1443,7 +1763,7 @@ Image Classification
       ↓
 Test Evaluation
       ↓
-Confusion Analysis
+Confusion Matrix
       ↓
 Feature-Map Visualization
       ↓
@@ -1455,7 +1775,7 @@ Confidence Analysis
       ↓
 Grad-CAM
       ↓
-Correct-vs-Incorrect Explanation
+Correct-vs-Incorrect Analysis
 ```
 
 ---
@@ -1486,15 +1806,15 @@ The experiments show that understanding a CNN requires more than measuring its f
 By combining:
 
 ```text
-classification performance
+Classification Performance
         +
-confusion analysis
+Confusion Analysis
         +
-feature-map visualization
+Feature-Map Visualization
         +
-representation-space analysis
+Representation-Space Analysis
         +
-confidence analysis
+Confidence Analysis
         +
 Grad-CAM
 ```
